@@ -925,6 +925,48 @@ entrypoint:
     }
 
     #[test]
+    fn test_assemble_macro_call_with_trailing_comment() {
+        // The comment must not become part of the last argument: `\b - \a`
+        // would expand to `4 ; r2 = 3 - 1` and assemble as `mov64 r2, 4`.
+        let source = r#"
+.macro SUB_LEN a, b
+    mov64 r2, \b - \a
+.endm
+.globl entrypoint
+entrypoint:
+    SUB_LEN 1, 4 ; r2 = 3
+    exit
+"#;
+        let assembler = Assembler::new(AssemblerOption::default());
+        let result = assembler.assemble_with_preprocess(source, "test.s", None);
+        let expected = assemble(".globl entrypoint\nentrypoint:\n    mov64 r2, 3\n    exit\n");
+        assert_eq!(result.unwrap(), expected.unwrap());
+    }
+
+    #[test]
+    fn test_assemble_directives_with_trailing_comments() {
+        let source = r#"
+.macro TWICE x # repeats x
+.rept 2 // twice
+    mov64 r1, \x
+.endr ; rept
+.endm # TWICE
+.globl entrypoint
+entrypoint:
+.if 1 # always
+    TWICE 7
+.endif ; if
+    exit
+"#;
+        let assembler = Assembler::new(AssemblerOption::default());
+        let result = assembler.assemble_with_preprocess(source, "test.s", None);
+        let expected = assemble(
+            ".globl entrypoint\nentrypoint:\n    mov64 r1, 7\n    mov64 r1, 7\n    exit\n",
+        );
+        assert_eq!(result.unwrap(), expected.unwrap());
+    }
+
+    #[test]
     fn test_assemble_label_arithmetic_cross_section_error() {
         // Cross-section arithmetic should fail
         let source = r#"
